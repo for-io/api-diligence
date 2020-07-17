@@ -1,0 +1,27 @@
+{
+  "name": "api-diligence",
+  "version": "1.0.0",
+  "config": {},
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "mongodb": "^3.5.7",
+    "@shelf/jest-mongodb": "^1.1.5",
+    "superagent": "^5.2.2",
+    "supertest": "^4.0.2"
+  },
+  "devDependencies": {
+    "express": "^4.17.1",
+    "jest": "^26.0.1"
+  },
+  "jest": {
+    "preset": "@shelf/jest-mongodb"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "index.js",
+    "src/"
+  ]
+}
