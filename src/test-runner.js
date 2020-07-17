@@ -38,7 +38,9 @@ const HDR_MOCK_USER = 'x-mock-user';
 const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', useMocks: true };
 
 function runTest(test, setupOpts = {}) {
-    const opts = Object.assign({ db: true }, setupOpts);
+    const opts = Object.assign({}, setupOpts);
+
+    const useMongo = opts.db === 'mongodb';
 
     const testName = test.tags ? test.name + ' [' + test.tags.join(', ') + ']' : test.name;
 
@@ -49,7 +51,7 @@ function runTest(test, setupOpts = {}) {
         let appFactory;
 
         beforeAll(async () => {
-            if (opts.db) {
+            if (useMongo) {
                 connection = await MongoClient.connect(global.__MONGO_URI__, {
                     useNewUrlParser: true,
                     useUnifiedTopology: true,
@@ -72,7 +74,7 @@ function runTest(test, setupOpts = {}) {
         });
 
         beforeEach(async () => {
-            if (opts.db) {
+            if (useMongo) {
                 for (const coll of await db.collections()) {
                     coll.drop();
                 }
@@ -80,7 +82,7 @@ function runTest(test, setupOpts = {}) {
         });
 
         afterAll(async () => {
-            if (opts.db) {
+            if (useMongo) {
                 await connection.close();
                 await db.close();
             }
@@ -97,14 +99,14 @@ function runTest(test, setupOpts = {}) {
 
                 const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
 
-                if (opts.db && assertedPrecondition) {
+                if (useMongo && assertedPrecondition) {
                     // set precondition
                     await initDB(db, assertedPrecondition);
                 }
 
                 if (assertedPrecondition) {
                     // verify precondition (sanity check)
-                    const realPrecondition = opts.db ? await exportDB(db) : {};
+                    const realPrecondition = useMongo ? await exportDB(db) : {};
                     expect(realPrecondition).toEqual(test.precondition);
                 }
 
@@ -172,7 +174,7 @@ function runTest(test, setupOpts = {}) {
 
                     // verify postcondition
                     if (assertedPostcondition) {
-                        const realPostcondition = opts.db ? await exportDB(db) : {};
+                        const realPostcondition = useMongo ? await exportDB(db) : {};
                         const unmaskedPostcondition = unmask(assertedPostcondition, realPostcondition);
                         expect(realPostcondition).toEqual(unmaskedPostcondition);
                     }
