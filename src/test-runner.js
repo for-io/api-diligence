@@ -59,15 +59,20 @@ function runTest(test, setupOpts = {}) {
 
                 db = connection.db(global.__MONGO_DB_NAME__);
             } else {
-                db = {}; // cannot be falsy value
+                db = 'NONE'; // cannot be falsy value
             }
 
             appFactory = opts.appFactory;
 
             if (!appFactory) {
+                // appFactory was not provided. try loading the default one form for.io
                 try {
                     appFactory = require('for.io').appFactory;
                 } catch (err) {
+                    // do nothing
+                }
+
+                if (!appFactory) {
                     throw new Error('appFactory was not provided!');
                 }
             }
@@ -91,10 +96,10 @@ function runTest(test, setupOpts = {}) {
         for (const testCase of test.cases) {
 
             it(testCase.name, async () => {
-                const config = Object.assign(TEST_CONFIG_DEFAULTS, opts.config, test.config);
+                const config = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
 
-                const appOpts = Object.assign({}, opts, { database: db, config });
-                const app = await appFactory(appOpts);
+                const appSetup = Object.assign({}, opts, { database: db, config }, opts.appSetup);
+                const app = await appFactory(appSetup);
                 const agent = request.agent(app);
 
                 const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
