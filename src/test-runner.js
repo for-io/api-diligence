@@ -49,7 +49,7 @@ function runTest(test, setupOpts = {}) {
         let connection;
         let db;
         let appFactory;
-        let components = {};
+        let appComponents = {};
 
         beforeAll(async () => {
             if (useMongo) {
@@ -63,8 +63,8 @@ function runTest(test, setupOpts = {}) {
 
                 db = connection.db(global.__MONGO_DB_NAME__);
 
-                components.mongodb = mongodb;
-                components.database = db;
+                appComponents.mongodb = mongodb;
+                appComponents.database = db;
 
             } else {
                 db = null;
@@ -105,12 +105,12 @@ function runTest(test, setupOpts = {}) {
 
             it(testCase.name, async () => {
 
-                const config = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
-                if (dbType !== undefined) config.DB_TYPE = dbType;
+                const appConfig = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
+                if (dbType !== undefined) appConfig.DB_TYPE = dbType;
 
                 // FIXME remove opts
-                const appSetup = Object.assign({}, opts, { config, components }, opts.appSetup);
-                const app = await appFactory(appSetup);
+                const appSetup = Object.assign({}, opts, { config: appConfig, components: appComponents }, opts.appSetup);
+                const { app } = await appFactory(appSetup);
 
                 const agent = request.agent(app);
 
