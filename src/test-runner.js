@@ -25,7 +25,6 @@
  */
 
 const request = require("supertest");
-const { MongoClient } = require('mongodb');
 
 const { initDB, exportDB } = require('./mongo-test-setup');
 const { unmask } = require('./test-case-comparator');
@@ -40,7 +39,8 @@ const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', useMo
 function runTest(test, setupOpts = {}) {
     const opts = Object.assign({}, setupOpts);
 
-    const useMongo = opts.db === 'mongodb';
+    const dbType = opts.dbType;
+    const useMongo = dbType === 'mongodb';
 
     const testName = test.tags ? test.name + ' [' + test.tags.join(', ') + ']' : test.name;
 
@@ -49,17 +49,25 @@ function runTest(test, setupOpts = {}) {
         let connection;
         let db;
         let appFactory;
+        let components = {};
 
         beforeAll(async () => {
             if (useMongo) {
-                connection = await MongoClient.connect(global.__MONGO_URI__, {
+
+                const mongodb = require('mongodb');
+
+                connection = await mongodb.MongoClient.connect(global.__MONGO_URI__, {
                     useNewUrlParser: true,
                     useUnifiedTopology: true,
                 });
 
                 db = connection.db(global.__MONGO_DB_NAME__);
+
+                components.mongodb = mongodb;
+                components.database = db;
+
             } else {
-                db = 'NONE'; // cannot be falsy value
+                db = null;
             }
 
             appFactory = opts.appFactory;
@@ -96,10 +104,14 @@ function runTest(test, setupOpts = {}) {
         for (const testCase of test.cases) {
 
             it(testCase.name, async () => {
-                const config = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
 
-                const appSetup = Object.assign({}, opts, { database: db, config }, opts.appSetup);
+                const config = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
+                if (dbType !== undefined) config.DB_TYPE = dbType;
+
+                // FIXME remove opts
+                const appSetup = Object.assign({}, opts, { config, components }, opts.appSetup);
                 const app = await appFactory(appSetup);
+
                 const agent = request.agent(app);
 
                 const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
