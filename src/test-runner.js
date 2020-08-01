@@ -36,11 +36,15 @@ const HDR_MOCK_USER = 'x-mock-user';
 
 const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', useMocks: true };
 
-function runTest(test, setupOpts = {}) {
-    const opts = Object.assign({}, setupOpts);
+function runTest(test) {
 
-    const dbType = opts.dbType;
-    const useMongo = dbType === 'mongodb';
+    const testOpts = test.opts || {};
+    const appSetup = testOpts.appSetup || {};
+
+    const appConfig = appSetup.config || {};
+    const appComponents = appSetup.components || {};
+
+    const useMongo = appConfig.DB_TYPE === 'mongodb';
 
     const testName = test.tags ? test.name + ' [' + test.tags.join(', ') + ']' : test.name;
 
@@ -49,7 +53,8 @@ function runTest(test, setupOpts = {}) {
         let connection;
         let db;
         let appFactory;
-        let appComponents = {};
+
+        const extraComponents = {};
 
         beforeAll(async () => {
             if (useMongo) {
@@ -63,17 +68,17 @@ function runTest(test, setupOpts = {}) {
 
                 db = connection.db(global.__MONGO_DB_NAME__);
 
-                appComponents.mongodb = mongodb;
-                appComponents.database = db;
+                extraComponents.mongodb = mongodb;
+                extraComponents.database = db;
 
             } else {
                 db = null;
             }
 
-            appFactory = opts.appFactory;
+            appFactory = testOpts.appFactory;
 
             if (!appFactory) {
-                // appFactory was not provided. try loading the default one form for.io
+                // appFactory was not provided, try loading the default appFactory from for.io
                 try {
                     appFactory = require('for.io').appFactory;
                 } catch (err) {
@@ -81,7 +86,7 @@ function runTest(test, setupOpts = {}) {
                 }
 
                 if (!appFactory) {
-                    throw new Error('appFactory was not provided!');
+                    throw new Error('appFactory was not provided, and could not load the default appFactory from for.io!');
                 }
             }
         });
@@ -105,13 +110,16 @@ function runTest(test, setupOpts = {}) {
 
             it(testCase.name, async () => {
 
-                const appConfig = Object.assign({}, TEST_CONFIG_DEFAULTS, opts.config, test.config);
-                if (dbType !== undefined) appConfig.DB_TYPE = dbType;
+                const enrichedAppConfig = Object.assign({}, TEST_CONFIG_DEFAULTS, appConfig, test.config);
 
-                // FIXME remove opts
-                const appSetup = Object.assign({}, opts, { config: appConfig, components: appComponents }, opts.appSetup);
-                const { app } = await appFactory(appSetup);
+                const enrichedAppComponents = Object.assign({}, appComponents, extraComponents);
 
+                const enrichedAppSetup = Object.assign({}, appSetup, {
+                    config: enrichedAppConfig,
+                    components: enrichedAppComponents,
+                });
+
+                const { app } = await appFactory(enrichedAppSetup);
                 const agent = request.agent(app);
 
                 const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
@@ -155,11 +163,11 @@ function runTest(test, setupOpts = {}) {
                         .set(assertedReq.headers || {});
 
                     if (username) {
-                        if (setupOpts.mockAuth) {
+                        if (testOpts.mockAuth) {
                             pendingReq = pendingReq.set(HDR_MOCK_USER, username);
 
-                        } else if (setupOpts.getAuthToken && assertedReq.headers.Authorization === undefined && assertedReq.headers.authorization === undefined) {
-                            let token = await setupOpts.getAuthToken({ username, agent: request.agent(app) });
+                        } else if (testOpts.getAuthToken && assertedReq.headers.Authorization === undefined && assertedReq.headers.authorization === undefined) {
+                            let token = await testOpts.getAuthToken({ username, agent: request.agent(app) });
                             pendingReq = pendingReq.set('Authorization', `Bearer ${token}`);
                         }
                     }
@@ -197,7 +205,7 @@ function runTest(test, setupOpts = {}) {
                     }
                 }
 
-                if (opts.onDone) opts.onDone();
+                if (testOpts.onDone) testOpts.onDone();
             });
         }
     });

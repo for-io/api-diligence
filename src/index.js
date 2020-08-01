@@ -37,11 +37,7 @@ function runApiDiligence(opts) {
             Object.assign(test, opts.test);
         }
 
-        if (opts.config) {
-            test.config = opts.config;
-        }
-
-        testRunner.runTest(test, opts.setup);
+        testRunner.runTest(test);
     }
 }
 
