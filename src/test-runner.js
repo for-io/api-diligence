@@ -78,16 +78,7 @@ function runTest(test) {
             appFactory = testOpts.appFactory;
 
             if (!appFactory) {
-                // appFactory was not provided, try loading the default appFactory from for.io
-                try {
-                    appFactory = require('for.io').appFactory;
-                } catch (err) {
-                    // do nothing
-                }
-
-                if (!appFactory) {
-                    throw new Error('appFactory was not provided, and could not load the default appFactory from for.io!');
-                }
+                throw new Error('You must provide appFactory!');
             }
         });
 
