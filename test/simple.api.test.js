@@ -32,13 +32,12 @@ function appFactory() {
 
     app.get('/', (req, res) => res.json({ msg: 'hello' }));
 
-    return app;
+    return { app };
 }
-
-const testSetup = { modules: {}, appFactory, db: false, dir: __dirname };
 
 runTest({
     name: 'simple api test',
+    opts: { appFactory },
     cases: [{
         name: 'hello world',
         steps: [{
@@ -46,4 +45,4 @@ runTest({
             200: { msg: 'hello' },
         }],
     }],
-}, testSetup);
+});
