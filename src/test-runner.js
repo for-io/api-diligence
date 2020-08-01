@@ -34,7 +34,7 @@ const SUPPORTED_HTTP_METHODS = ['GET', 'POST', 'OPTIONS', 'PATCH', 'PUT', 'DELET
 
 const HDR_MOCK_USER = 'x-mock-user';
 
-const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', useMocks: true };
+const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', USE_MOCKS: true };
 
 function runTest(test) {
 
