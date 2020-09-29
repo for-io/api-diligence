@@ -97,7 +97,11 @@ function runTest(test) {
             }
         });
 
+        let caseNum = 0;
         for (const testCase of test.cases) {
+            caseNum++;
+
+            if (!testCase.name) testCase.name = `case ${caseNum}`;
 
             it(testCase.name, async () => {
 
