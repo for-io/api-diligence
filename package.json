@@ -1,27 +1,46 @@
 {
   "name": "api-diligence",
-  "version": "1.0.0",
-  "config": {},
-  "scripts": {
-    "test": "jest --runInBand"
+  "version": "0.0.0",
+  "description": "A library for easy creation and execution of database-aware end-to-end API tests.",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
   },
   "dependencies": {
-    "mongodb": "^3.5.7",
-    "@shelf/jest-mongodb": "^1.1.5",
-    "superagent": "^5.2.2",
-    "supertest": "^4.0.2"
+    "mongodb": "^3.6.2",
+    "@shelf/jest-mongodb": "^1.2.3",
+    "superagent": "^6.1.0",
+    "supertest": "^5.0.0"
   },
   "devDependencies": {
     "express": "^4.17.1",
     "jest": "^26.0.1"
   },
-  "jest": {
-    "preset": "@shelf/jest-mongodb"
+  "scripts": {
+    "test": "jest --runInBand"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/for-io/api-diligence.git"
   },
   "files": [
     "LICENSE",
     "README.md",
     "index.js",
     "src/"
-  ]
+  ],
+  "keywords": [
+    "api",
+    "testing",
+    "diligence",
+    "integration",
+    "tests",
+    "for.io"
+  ],
+  "author": "Nikolche Mihajlovski",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/for-io/api-diligence/issues"
+  },
+  "homepage": "https://github.com/for-io/api-diligence"
 }
