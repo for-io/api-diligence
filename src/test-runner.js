@@ -25,6 +25,7 @@
  */
 
 const request = require("supertest");
+const mongodb = require('mongodb');
 
 const { initDB, exportDB } = require('./mongo-test-setup');
 const { unmask } = require('./test-case-comparator');
@@ -36,174 +37,192 @@ const HDR_MOCK_USER = 'x-mock-user';
 
 const TEST_CONFIG_DEFAULTS = { NODE_ENV: 'test', JWT_SECRET: 'jwt_secret', USE_MOCKS: true };
 
-function runTest(test) {
+const globalState = {
+    extraComponents: {},
+    connection: null,
+    db: null,
+};
 
-    const testOpts = test.opts || {};
+const useMongo = true;
+
+function runTests(tests, testOpts = {}) {
+    if (tests.length === 0) return;
+
+    _runTests(tests, testOpts).catch(err => {
+        console.error('Failed to setup the tests!', err);
+        throw err;
+    });
+}
+
+function runTest(test) {
+    _runTests([test], test.opts).catch(err => {
+        console.error('Failed to setup the test!', err);
+        throw err;
+    });
+}
+
+beforeAll(async () => {
+    if (useMongo) {
+        globalState.connection = await mongodb.MongoClient.connect(global.__MONGO_URI__, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+
+        globalState.db = globalState.connection.db(global.__MONGO_DB_NAME__);
+        globalState.extraComponents = { mongodb, database: globalState.db };
+    }
+});
+
+afterAll(async () => {
+    if (useMongo) {
+        if (globalState.connection) {
+            await globalState.connection.close();
+            globalState.connection = null;
+            globalState.db = null;
+        }
+    }
+});
+
+async function _runTests(tests, testOpts = {}) {
+    // init the express app in the first test execution, and reuse it in the next tests
+    let expressApp = null;
+
     const appSetup = testOpts.appSetup || {};
+    const appFactory = testOpts.appFactory;
 
     const appConfig = appSetup.config || {};
-    const appComponents = appSetup.components || {};
-
     const useMongo = appConfig.DB_TYPE === 'mongodb';
 
-    const testName = test.tags ? test.name + ' [' + test.tags.join(', ') + ']' : test.name;
+    if (!appFactory) {
+        throw new Error('You must provide appFactory!');
+    }
 
-    describe(testName, () => {
+    for (let i = 0; i < tests.length; i++) {
+        const test = tests[i];
 
-        let connection;
-        let db;
-        let appFactory;
+        const testName = test.tags ? test.name + ' [' + test.tags.join(', ') + ']' : test.name;
 
-        const extraComponents = {};
+        describe(testName, () => {
 
-        beforeAll(async () => {
-            if (useMongo) {
-
-                const mongodb = require('mongodb');
-
-                connection = await mongodb.MongoClient.connect(global.__MONGO_URI__, {
-                    useNewUrlParser: true,
-                    useUnifiedTopology: true,
-                });
-
-                db = connection.db(global.__MONGO_DB_NAME__);
-
-                extraComponents.mongodb = mongodb;
-                extraComponents.database = db;
-
-            } else {
-                db = null;
-            }
-
-            appFactory = testOpts.appFactory;
-
-            if (!appFactory) {
-                throw new Error('You must provide appFactory!');
-            }
-        });
-
-        beforeEach(async () => {
-            if (useMongo) {
-                for (const coll of await db.collections()) {
-                    coll.drop();
+            beforeEach(async () => {
+                if (useMongo) {
+                    for (const coll of await globalState.db.collections()) {
+                        coll.drop();
+                    }
                 }
-            }
-        });
+            });
 
-        afterAll(async () => {
-            if (useMongo) {
-                await connection.close();
-                await db.close();
-            }
-        });
+            for (let i = 0; i < test.cases.length; i++) {
+                const testCase = test.cases[i];
+                const caseNum = i + 1;
 
-        let caseNum = 0;
-        for (const testCase of test.cases) {
-            caseNum++;
+                if (!testCase.name) testCase.name = `case ${caseNum}`;
 
-            if (!testCase.name) testCase.name = `case ${caseNum}`;
+                it(testCase.name, async () => {
 
-            it(testCase.name, async () => {
+                    if (expressApp === null) {
+                        const appComponents = appSetup.components || {};
+                        const enrichedAppConfig = Object.assign({}, TEST_CONFIG_DEFAULTS, appConfig, test.config);
+                        const enrichedAppComponents = Object.assign({}, appComponents, globalState.extraComponents);
 
-                const enrichedAppConfig = Object.assign({}, TEST_CONFIG_DEFAULTS, appConfig, test.config);
+                        const enrichedAppSetup = Object.assign({}, appSetup, {
+                            config: enrichedAppConfig,
+                            components: enrichedAppComponents,
+                        });
 
-                const enrichedAppComponents = Object.assign({}, appComponents, extraComponents);
+                        expressApp = (await appFactory(enrichedAppSetup)).app;
+                    }
 
-                const enrichedAppSetup = Object.assign({}, appSetup, {
-                    config: enrichedAppConfig,
-                    components: enrichedAppComponents,
-                });
+                    const agent = request.agent(expressApp);
 
-                const { app } = await appFactory(enrichedAppSetup);
-                const agent = request.agent(app);
+                    const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
 
-                const assertedPrecondition = preprocess(testCase.precondition || test.precondition);
+                    if (useMongo && assertedPrecondition) {
+                        // set precondition
+                        await initDB(globalState.db, assertedPrecondition);
+                    }
 
-                if (useMongo && assertedPrecondition) {
-                    // set precondition
-                    await initDB(db, assertedPrecondition);
-                }
+                    if (assertedPrecondition) {
+                        // verify precondition (sanity check)
+                        const realPrecondition = useMongo ? await exportDB(globalState.db) : {};
+                        expect(realPrecondition).toEqual(test.precondition);
+                    }
 
-                if (assertedPrecondition) {
-                    // verify precondition (sanity check)
-                    const realPrecondition = useMongo ? await exportDB(db) : {};
-                    expect(realPrecondition).toEqual(test.precondition);
-                }
+                    for (let i = 0; i < testCase.steps.length; i++) {
+                        // pre-process test case data
+                        const step = testCase.steps[i];
+                        if (step.skip === true) continue;
 
-                for (let i = 0; i < testCase.steps.length; i++) {
-                    // pre-process test case data
-                    const step = testCase.steps[i];
-                    if (step.skip === true) continue;
+                        const stepReq = initReq(step.request);
+                        const stepResp = initResp(step);
 
-                    const stepReq = initReq(step.request);
-                    const stepResp = initResp(step);
+                        const username = stepReq.username || step.username || testCase.username || test.username;
 
-                    const username = stepReq.username || step.username || testCase.username || test.username;
+                        const assertedPostcondition = step.postcondition || testCase.postcondition || test.postcondition;
 
-                    const assertedPostcondition = step.postcondition || testCase.postcondition || test.postcondition;
+                        // init asserted request
+                        const defaultReq = { headers: {} };
+                        const assertedReq = Object.assign(defaultReq, preprocess(stepReq));
+                        validateReq(assertedReq);
 
-                    // init asserted request
-                    const defaultReq = { headers: {} };
-                    const assertedReq = Object.assign(defaultReq, preprocess(stepReq));
-                    validateReq(assertedReq);
+                        // init asserted response
+                        const defaultResp = { headers: {} };
+                        const assertedResp = Object.assign(defaultResp, stepResp);
 
-                    // init asserted response
-                    const defaultResp = { headers: {} };
-                    const assertedResp = Object.assign(defaultResp, stepResp);
+                        // prepare a request
+                        const method = assertedReq.method.toLowerCase();
 
-                    // prepare a request
-                    const method = assertedReq.method.toLowerCase();
+                        let pendingReq = agent[method](assertedReq.url)
+                            .set(assertedReq.headers || {});
 
-                    let pendingReq = agent[method](assertedReq.url)
-                        .set(assertedReq.headers || {});
+                        if (username) {
+                            if (testOpts.mockAuth) {
+                                pendingReq = pendingReq.set(HDR_MOCK_USER, username);
 
-                    if (username) {
-                        if (testOpts.mockAuth) {
-                            pendingReq = pendingReq.set(HDR_MOCK_USER, username);
+                            } else if (testOpts.getAuthToken && assertedReq.headers.Authorization === undefined && assertedReq.headers.authorization === undefined) {
+                                let token = await testOpts.getAuthToken({ username, agent: request.agent(expressApp) });
+                                pendingReq = pendingReq.set('Authorization', `Bearer ${token}`);
+                            }
+                        }
 
-                        } else if (testOpts.getAuthToken && assertedReq.headers.Authorization === undefined && assertedReq.headers.authorization === undefined) {
-                            let token = await testOpts.getAuthToken({ username, agent: request.agent(app) });
-                            pendingReq = pendingReq.set('Authorization', `Bearer ${token}`);
+                        if (assertedReq.body) {
+                            pendingReq = pendingReq.query(assertedReq.query).sortQuery();
+                        }
+
+                        if (assertedReq.body) {
+                            pendingReq = pendingReq.send(assertedReq.body);
+                        }
+
+                        if (assertedReq.cookies) {
+                            pendingReq = pendingReq.set('Cookie', constructCookieList(assertedReq.cookies));
+                        }
+
+                        // send the request and receive response
+                        const result = await pendingReq
+                            .timeout({ deadline: assertedReq.timeout || 1000 })
+                            .catch(err => {
+                                console.error(err);
+                                throw err;
+                            });
+
+                        // verify response
+                        const realResp = refineResponse(result, assertedResp);
+                        const unmaskedResp = unmask(assertedResp, realResp);
+                        expect(realResp).toEqual(unmaskedResp);
+
+                        // verify postcondition
+                        if (assertedPostcondition) {
+                            const realPostcondition = useMongo ? await exportDB(globalState.db) : {};
+                            const unmaskedPostcondition = unmask(assertedPostcondition, realPostcondition);
+                            expect(realPostcondition).toEqual(unmaskedPostcondition);
                         }
                     }
 
-                    if (assertedReq.body) {
-                        pendingReq = pendingReq.query(assertedReq.query).sortQuery();
-                    }
-
-                    if (assertedReq.body) {
-                        pendingReq = pendingReq.send(assertedReq.body);
-                    }
-
-                    if (assertedReq.cookies) {
-                        pendingReq = pendingReq.set('Cookie', constructCookieList(assertedReq.cookies));
-                    }
-
-                    // send the request and receive response
-                    const result = await pendingReq
-                        .timeout({ deadline: assertedReq.timeout || 1000 })
-                        .catch(err => {
-                            console.error(err);
-                            throw err;
-                        });
-
-                    // verify response
-                    const realResp = refineResponse(result, assertedResp);
-                    const unmaskedResp = unmask(assertedResp, realResp);
-                    expect(realResp).toEqual(unmaskedResp);
-
-                    // verify postcondition
-                    if (assertedPostcondition) {
-                        const realPostcondition = useMongo ? await exportDB(db) : {};
-                        const unmaskedPostcondition = unmask(assertedPostcondition, realPostcondition);
-                        expect(realPostcondition).toEqual(unmaskedPostcondition);
-                    }
-                }
-
-                if (testOpts.onDone) testOpts.onDone();
-            });
-        }
-    });
+                    if (testOpts.onDone) testOpts.onDone();
+                });
+            }
+        });
+    }
 }
 
 function initReq(req) {
@@ -275,4 +294,4 @@ function validateReq(req) {
     }
 }
 
-module.exports = { runTest };
+module.exports = { runTest, runTests };

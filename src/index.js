@@ -30,15 +30,20 @@ const testRunner = require('./test-runner');
 function runApiDiligence(opts) {
     const testDirs = testLoader.listTestDirs(opts.testsRoot);
 
-    for (const testDir of testDirs) {
+    const tests = testDirs.map(testDir => {
         const test = testLoader.loadTest(testDir);
 
         if (opts.test) {
             Object.assign(test, opts.test);
         }
 
-        testRunner.runTest(test);
-    }
+        return test;
+    });
+
+    // "test.opts" are the same for each test, so they are provided as "testOpts" param
+    const testOpts = opts.test.opts || {};
+
+    testRunner.runTests(tests, testOpts);
 }
 
 module.exports = Object.assign({ runApiDiligence }, testLoader, testRunner);

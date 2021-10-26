@@ -10,7 +10,7 @@
     "mongodb": "^3.6.2",
     "@shelf/jest-mongodb": "^1.2.3",
     "superagent": "^6.1.0",
-    "supertest": "^5.0.0"
+    "supertest": "^6.1.6"
   },
   "devDependencies": {
     "express": "^4.17.1",
